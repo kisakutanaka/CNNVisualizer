@@ -66,6 +66,8 @@ CNN Visualizer を小さく動く単位で段階的に実装していくため�
 
 ## STEP 9: GitHub Pagesへのデプロイ
 
+- [x] GitHub Actionsで自動デプロイするworkflowを作成（.github/workflows/deploy.yml）※iPhone実機テストのためSTEP2完了時点で前倒しで実施
+- [ ] リポジトリ設定でPagesのSourceを「GitHub Actions」にする（要ユーザー操作）
 - [ ] 本番ビルドを作成し、GitHub Pages上で正しく動作することを確認する
 - [ ] READMEに使い方・デプロイURLを記載する
 
