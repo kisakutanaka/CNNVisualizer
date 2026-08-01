@@ -24,13 +24,13 @@ CNN Visualizer を小さく動く単位で段階的に実装していくため�
 
 ## STEP 1: 画像入力（アップロード）
 
-- [ ] 画像ファイルをアップロードするUIを実装
-- [ ] アップロードした画像をプレビュー表示する
+- [x] 画像ファイルをアップロードするUIを実装（src/App.tsx）
+- [x] アップロードした画像をプレビュー表示する
 
 ## STEP 2: 画像入力（カメラ撮影）
 
-- [ ] `<input type="file" capture>` またはgetUserMediaでカメラ撮影に対応
-- [ ] 撮影した画像もSTEP1と同じプレビューに表示できるようにする
+- [x] `<input type="file" accept="image/*" capture="environment">` でカメラ撮影に対応（iPhone/iOS Safari想定、src/App.tsx）
+- [x] 撮影した画像もSTEP1と同じプレビューに表示できるようにする
 
 ## STEP 3: TensorFlow.jsの導入と1モデルでの推論
 
