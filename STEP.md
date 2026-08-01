@@ -18,9 +18,9 @@ CNN Visualizer を小さく動く単位で段階的に実装していくため�
 
 ## STEP 0: プロジェクト雛形
 
-- [ ] Vite + React + TypeScript でプロジェクトを作成
-- [ ] GitHub Pages向けのbase pathを設定できる状態にする（vite.config.ts）
-- [ ] `npm run dev` でローカル起動し、空のページが表示されることを確認
+- [x] Vite + React + TypeScript でプロジェクトを作成
+- [x] GitHub Pages向けのbase pathを設定できる状態にする（vite.config.ts、base: '/CNNVisualizer/'）
+- [x] `npm run dev` でローカル起動し、空のページが表示されることを確認（`npm run build` も成功確認済み）
 
 ## STEP 1: 画像入力（アップロード）
 
