@@ -42,3 +42,38 @@
     border: 1px solid var(--border);
   }
 }
+
+.status {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.predictions {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--code-bg);
+  }
+
+  .label {
+    color: var(--text-h);
+    text-align: left;
+  }
+
+  .probability {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+}

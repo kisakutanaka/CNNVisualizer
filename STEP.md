@@ -34,9 +34,9 @@ CNN Visualizer を小さく動く単位で段階的に実装していくため�
 
 ## STEP 3: TensorFlow.jsの導入と1モデルでの推論
 
-- [ ] TensorFlow.jsをセットアップ
-- [ ] 学習済みモデル（例: MobileNet）を1つ読み込む
-- [ ] アップロード/撮影した画像を推論し、分類結果（ラベルと確率）をリスト表示する
+- [x] TensorFlow.jsをセットアップ（@tensorflow/tfjs, @tensorflow-models/mobilenet）
+- [x] 学習済みモデル（MobileNet v2 alpha 0.5、モバイル向けに軽量な構成）を1つ読み込む
+- [x] アップロード/撮影した画像を推論し、分類結果（ラベルと確率）をリスト表示する
 
 ## STEP 4: モデル切り替え機能
 
@@ -67,9 +67,9 @@ CNN Visualizer を小さく動く単位で段階的に実装していくため�
 ## STEP 9: GitHub Pagesへのデプロイ
 
 - [x] GitHub Actionsで自動デプロイするworkflowを作成（.github/workflows/deploy.yml）※iPhone実機テストのためSTEP2完了時点で前倒しで実施
-- [ ] リポジトリ設定でPagesのSourceを「GitHub Actions」にする（要ユーザー操作）
-- [ ] 本番ビルドを作成し、GitHub Pages上で正しく動作することを確認する
-- [ ] READMEに使い方・デプロイURLを記載する
+- [x] リポジトリ設定でPagesのSourceを「GitHub Actions」にする
+- [x] 本番ビルドを作成し、GitHub Pages上で正しく動作することを確認する（iPhone実機でカメラ撮影〜プレビューまで確認済み）
+- [ ] READMEに使い方・デプロイURLを記載する（MVP完成時にまとめて記載）
 
 ---
 
