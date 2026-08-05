@@ -56,6 +56,46 @@
   pointer-events: none;
 }
 
+.layer-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  button {
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+    line-height: 1;
+    border-radius: 50%;
+    color: var(--accent);
+    background: var(--accent-bg);
+    border: 2px solid var(--accent-border);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      border-color: var(--accent);
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+  }
+}
+
+.layer-indicator {
+  min-width: 90px;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.hint {
+  margin: -12px 0 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
 .status {
   color: var(--text);
   font-size: 15px;

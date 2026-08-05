@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, TouchEvent } from 'react'
 import type * as tf from '@tensorflow/tfjs'
 import {
   loadMobileNet,
   classify,
   buildActivationModel,
   getLayerHeatmap,
+  OVERLAY_LAYERS,
   type Prediction,
 } from './mobilenet'
 import { drawActivationOverlay } from './heatmap'
 import './App.css'
 
-// STEP7で層の切り替えUIを実装するまでは、中間の1層で固定表示する
-const OVERLAY_LAYER = 'conv_pw_5_relu'
+const SWIPE_THRESHOLD_PX = 40
 
 function App() {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
@@ -21,8 +21,11 @@ function App() {
   const [layerNames, setLayerNames] = useState<string[]>([])
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [isClassifying, setIsClassifying] = useState(false)
+  const [layerIndex, setLayerIndex] = useState(0)
+  const [imageLoadedAt, setImageLoadedAt] = useState(0)
   const imgRef = useRef<HTMLImageElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const touchStartX = useRef<number | null>(null)
 
   useEffect(() => {
     loadMobileNet().then((loadedModel) => {
@@ -33,6 +36,21 @@ function App() {
     })
   }, [])
 
+  // 画像もしくは選択中の層が変わるたびに、そのオーバーレイを描き直す
+  useEffect(() => {
+    if (!activationModel || !imgRef.current || !canvasRef.current || imageLoadedAt === 0) {
+      return
+    }
+    const heatmap = getLayerHeatmap(
+      activationModel,
+      layerNames,
+      OVERLAY_LAYERS[layerIndex],
+      imgRef.current,
+    )
+    drawActivationOverlay(canvasRef.current, heatmap)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layerIndex, imageLoadedAt, activationModel])
+
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -40,6 +58,7 @@ function App() {
     const reader = new FileReader()
     reader.onload = () => {
       setPredictions([])
+      setLayerIndex(0)
       setImageUrl(reader.result as string)
     }
     reader.readAsDataURL(file)
@@ -51,16 +70,28 @@ function App() {
     const result = classify(model, imgRef.current)
     setPredictions(result)
     setIsClassifying(false)
+    setImageLoadedAt(Date.now())
+  }
 
-    if (activationModel && canvasRef.current) {
-      const heatmap = getLayerHeatmap(
-        activationModel,
-        layerNames,
-        OVERLAY_LAYER,
-        imgRef.current,
-      )
-      drawActivationOverlay(canvasRef.current, heatmap)
-    }
+  function showPreviousLayer() {
+    setLayerIndex((i) => Math.max(0, i - 1))
+  }
+
+  function showNextLayer() {
+    setLayerIndex((i) => Math.min(OVERLAY_LAYERS.length - 1, i + 1))
+  }
+
+  function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
+    touchStartX.current = event.touches[0].clientX
+  }
+
+  function handleTouchEnd(event: TouchEvent<HTMLDivElement>) {
+    if (touchStartX.current === null) return
+    const deltaX = event.changedTouches[0].clientX - touchStartX.current
+    touchStartX.current = null
+
+    if (deltaX <= -SWIPE_THRESHOLD_PX) showNextLayer()
+    else if (deltaX >= SWIPE_THRESHOLD_PX) showPreviousLayer()
   }
 
   return (
@@ -87,15 +118,44 @@ function App() {
       </div>
 
       {imageUrl && (
-        <div className="preview">
-          <img
-            ref={imgRef}
-            src={imageUrl}
-            alt="アップロードした画像のプレビュー"
-            onLoad={handleImageLoad}
-          />
-          <canvas ref={canvasRef} className="activation-overlay" />
-        </div>
+        <>
+          <div
+            className="preview"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
+            <img
+              ref={imgRef}
+              src={imageUrl}
+              alt="アップロードした画像のプレビュー"
+              onLoad={handleImageLoad}
+            />
+            <canvas ref={canvasRef} className="activation-overlay" />
+          </div>
+
+          <div className="layer-nav">
+            <button
+              type="button"
+              onClick={showPreviousLayer}
+              disabled={layerIndex === 0}
+              aria-label="前の層"
+            >
+              ‹
+            </button>
+            <span className="layer-indicator">
+              層 {layerIndex + 1} / {OVERLAY_LAYERS.length}
+            </span>
+            <button
+              type="button"
+              onClick={showNextLayer}
+              disabled={layerIndex === OVERLAY_LAYERS.length - 1}
+              aria-label="次の層"
+            >
+              ›
+            </button>
+          </div>
+          <p className="hint">画像を左右にスワイプすると層を切り替えられます</p>
+        </>
       )}
 
       {isClassifying && <p className="status">分類中…</p>}

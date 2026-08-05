@@ -13,6 +13,26 @@ const VISUALIZABLE_LAYER_TYPES = ['Conv2D', 'DepthwiseConv2D', 'Activation']
 export type Prediction = { className: string; probability: number }
 export type LayerActivation = { name: string; shape: number[] }
 
+// スワイプで切り替える層。MobileNetV1(alpha 0.25)は13個のブロック（dw+pw）で構成される。
+// 全56層（dw/pw/活性化前後すべて）を見せると細かすぎるため、各ブロックの出力（conv_pw_X_relu）
+// と最初のconv1_reluのみに絞り、層が進むごとに特徴が複雑になる様子を追いやすくしている
+export const OVERLAY_LAYERS = [
+  'conv1_relu',
+  'conv_pw_1_relu',
+  'conv_pw_2_relu',
+  'conv_pw_3_relu',
+  'conv_pw_4_relu',
+  'conv_pw_5_relu',
+  'conv_pw_6_relu',
+  'conv_pw_7_relu',
+  'conv_pw_8_relu',
+  'conv_pw_9_relu',
+  'conv_pw_10_relu',
+  'conv_pw_11_relu',
+  'conv_pw_12_relu',
+  'conv_pw_13_relu',
+]
+
 export function loadMobileNet(): Promise<tf.LayersModel> {
   return tf.loadLayersModel(MODEL_URL)
 }
