@@ -5,10 +5,14 @@ import {
   loadMobileNet,
   classify,
   buildActivationModel,
-  getActivationShapes,
+  getLayerHeatmap,
   type Prediction,
 } from './mobilenet'
+import { drawActivationOverlay } from './heatmap'
 import './App.css'
+
+// STEP7で層の切り替えUIを実装するまでは、中間の1層で固定表示する
+const OVERLAY_LAYER = 'conv_pw_5_relu'
 
 function App() {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
@@ -18,6 +22,7 @@ function App() {
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [isClassifying, setIsClassifying] = useState(false)
   const imgRef = useRef<HTMLImageElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     loadMobileNet().then((loadedModel) => {
@@ -47,9 +52,14 @@ function App() {
     setPredictions(result)
     setIsClassifying(false)
 
-    if (activationModel) {
-      const shapes = getActivationShapes(activationModel, layerNames, imgRef.current)
-      console.log('layer activations:', shapes)
+    if (activationModel && canvasRef.current) {
+      const heatmap = getLayerHeatmap(
+        activationModel,
+        layerNames,
+        OVERLAY_LAYER,
+        imgRef.current,
+      )
+      drawActivationOverlay(canvasRef.current, heatmap)
     }
   }
 
@@ -84,6 +94,7 @@ function App() {
             alt="アップロードした画像のプレビュー"
             onLoad={handleImageLoad}
           />
+          <canvas ref={canvasRef} className="activation-overlay" />
         </div>
       )}
 

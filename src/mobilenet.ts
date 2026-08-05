@@ -72,3 +72,26 @@ export function getActivationShapes(
     }))
   })
 }
+
+export type ActivationHeatmap = { width: number; height: number; data: Float32Array }
+
+/** 指定した層の活性化をチャンネル方向に平均し、0〜1に正規化した単チャンネルのヒートマップを返す */
+export function getLayerHeatmap(
+  activationModel: tf.LayersModel,
+  layerNames: string[],
+  layerName: string,
+  img: HTMLImageElement,
+): ActivationHeatmap {
+  return tf.tidy(() => {
+    const input = preprocess(img)
+    const outputs = activationModel.predict(input) as tf.Tensor4D[]
+    const index = layerNames.indexOf(layerName)
+    const activation = outputs[index]
+    const channelMean = activation.mean(-1).squeeze([0]) as tf.Tensor2D
+    const min = channelMean.min()
+    const max = channelMean.max()
+    const normalized = channelMean.sub(min).div(max.sub(min).add(1e-6))
+    const [height, width] = normalized.shape
+    return { width, height, data: Float32Array.from(normalized.dataSync()) }
+  })
+}

@@ -54,8 +54,8 @@ CNN Visualizer を小さく動く単位で段階的に実装していくため�
 
 ## STEP 6: 活性化を画像として可視化する
 
-- [ ] 1つの層の活性化マップをcanvasに描画する
-- [ ] 元画像の上にオーバーレイ表示する（透過重ね合わせ）
+- [x] 1つの層の活性化マップをcanvasに描画する（`getLayerHeatmap`でチャンネル平均→0〜1正規化、`drawActivationOverlay`で青→緑→赤のヒートマップ色に変換、src/mobilenet.ts, src/heatmap.ts）
+- [x] 元画像の上にオーバーレイ表示する（透過重ね合わせ。活性化が弱い部分ほどalphaを下げて元画像を透かす。現在は固定で`conv_pw_5_relu`層を表示、層切り替えはSTEP7で対応）
 
 ## STEP 7: 層の切り替えUI（スワイプ）
 
