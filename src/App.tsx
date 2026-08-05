@@ -1,20 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import '@tensorflow/tfjs'
-import * as mobilenet from '@tensorflow-models/mobilenet'
+import type * as tf from '@tensorflow/tfjs'
+import {
+  loadMobileNet,
+  classify,
+  buildActivationModel,
+  getActivationShapes,
+  type Prediction,
+} from './mobilenet'
 import './App.css'
-
-type Prediction = { className: string; probability: number }
 
 function App() {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [model, setModel] = useState<mobilenet.MobileNet | null>(null)
+  const [model, setModel] = useState<tf.LayersModel | null>(null)
+  const [activationModel, setActivationModel] = useState<tf.LayersModel | null>(null)
+  const [layerNames, setLayerNames] = useState<string[]>([])
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [isClassifying, setIsClassifying] = useState(false)
   const imgRef = useRef<HTMLImageElement>(null)
 
   useEffect(() => {
-    mobilenet.load({ version: 2, alpha: 0.5 }).then(setModel)
+    loadMobileNet().then((loadedModel) => {
+      setModel(loadedModel)
+      const built = buildActivationModel(loadedModel)
+      setActivationModel(built.activationModel)
+      setLayerNames(built.layerNames)
+    })
   }, [])
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -29,12 +40,17 @@ function App() {
     reader.readAsDataURL(file)
   }
 
-  async function handleImageLoad() {
+  function handleImageLoad() {
     if (!model || !imgRef.current) return
     setIsClassifying(true)
-    const result = await model.classify(imgRef.current)
+    const result = classify(model, imgRef.current)
     setPredictions(result)
     setIsClassifying(false)
+
+    if (activationModel) {
+      const shapes = getActivationShapes(activationModel, layerNames, imgRef.current)
+      console.log('layer activations:', shapes)
+    }
   }
 
   return (

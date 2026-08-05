@@ -34,20 +34,23 @@ CNN Visualizer を小さく動く単位で段階的に実装していくため�
 
 ## STEP 3: TensorFlow.jsの導入と1モデルでの推論
 
-- [x] TensorFlow.jsをセットアップ（@tensorflow/tfjs, @tensorflow-models/mobilenet）
-- [x] 学習済みモデル（MobileNet v2 alpha 0.5、モバイル向けに軽量な構成）を1つ読み込む
+- [x] TensorFlow.jsをセットアップ（@tensorflow/tfjs）
+- [x] 学習済みモデル（MobileNet v1 alpha 0.25、Keras/LayersModel形式）を1つ読み込む
 - [x] アップロード/撮影した画像を推論し、分類結果（ラベルと確率）をリスト表示する
+- 備考: 当初`@tensorflow-models/mobilenet`（GraphModel）を使っていたが、STEP5で中間層の活性化を取得する必要が生じたため`tf.loadLayersModel()`に切り替えた（GraphModelは`classify()`/`infer()`しか公開しておらず、任意の層の出力を取り出せなかったため）。分類ロジック・前処理・ImageNetラベル一覧（`src/data/imagenetClasses.ts`、元パッケージから抽出、Apache License 2.0）は自前実装に置き換え済み（`src/mobilenet.ts`）
 
 ## STEP 4: モデル切り替え機能
 
-- [ ] 切り替え可能な学習済みモデルを2〜3種類用意する
+- [ ] 切り替え可能な学習済みモデルを2〜3種類用意する（LayersModel形式で中間層アクセスできるものを選定）
 - [ ] モデル選択UI（ドロップダウン等）を実装
 - [ ] 選択中のモデルで推論結果が切り替わることを確認する
 
 ## STEP 5: 中間層の活性化を取得する
 
-- [ ] 選択中モデルの各層（中間層）の出力を取得する仕組みを実装
-- [ ] まずはコンソール等で、層ごとの出力テンソルの形状を確認できる状態にする
+※STEP4より先に実施（ユーザー判断、2026-08-05）
+
+- [x] 選択中モデルの各層（中間層）の出力を取得する仕組みを実装（`buildActivationModel`/`getActivationShapes`、`src/mobilenet.ts`）
+- [x] まずはコンソール等で、層ごとの出力テンソルの形状を確認できる状態にする（56層、空間サイズ112→7・チャンネル数8→256と進む様子をブラウザ実行で確認済み）
 
 ## STEP 6: 活性化を画像として可視化する
 
@@ -70,6 +73,12 @@ CNN Visualizer を小さく動く単位で段階的に実装していくため�
 - [x] リポジトリ設定でPagesのSourceを「GitHub Actions」にする
 - [x] 本番ビルドを作成し、GitHub Pages上で正しく動作することを確認する（iPhone実機でカメラ撮影〜プレビューまで確認済み）
 - [ ] READMEに使い方・デプロイURLを記載する（MVP完成時にまとめて記載）
+
+---
+
+## MVP完了後のバックログ（優先度未定、着手はMVP完成後）
+
+- 分類結果ラベルの日本語化（現状はImageNetの英語ラベルをそのまま表示。ユーザーコメント2026-08-05: 「結果が英語だからいずれ日本語にしたい」）
 
 ---
 
