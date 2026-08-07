@@ -95,24 +95,81 @@ export function getActivationShapes(
 
 export type ActivationHeatmap = { width: number; height: number; data: Float32Array }
 
-/** 指定した層の活性化をチャンネル方向に平均し、0〜1に正規化した単チャンネルのヒートマップを返す */
-export function getLayerHeatmap(
+/**
+ * Grad-CAM計算用に、各層より後ろの処理だけを再現する「後半モデル」を層ごとに組み立てる。
+ * MobileNetV1は分岐のない一本道の構造なので、対象層の出力形状を入力とする新しいモデルに
+ * 後続の層を順番に繋ぎ直すだけで、そこから先の計算を再現できる
+ */
+export function buildGradCamModels(
+  model: tf.LayersModel,
+  layerNames: string[],
+): Map<string, tf.LayersModel> {
+  const gradCamModels = new Map<string, tf.LayersModel>()
+
+  for (const layerName of layerNames) {
+    const layerIndex = model.layers.findIndex((layer) => layer.name === layerName)
+    if (layerIndex === -1) continue
+
+    const outputShape = model.layers[layerIndex].outputShape as number[]
+    const tailInput = tf.input({ shape: outputShape.slice(1) })
+    let x: tf.SymbolicTensor = tailInput
+    for (let i = layerIndex + 1; i < model.layers.length; i++) {
+      x = model.layers[i].apply(x) as tf.SymbolicTensor
+    }
+    gradCamModels.set(layerName, tf.model({ inputs: tailInput, outputs: x }))
+  }
+
+  return gradCamModels
+}
+
+export type GradCamResult = {
+  /** 予測クラスへの寄与度で重み付けした合成ヒートマップ（0〜1正規化） */
+  heatmap: ActivationHeatmap
+  /** チャンネル（ニューロン）ごとの予測への寄与度。値が大きいほど予測に強く貢献している */
+  channelWeights: Float32Array
+}
+
+/**
+ * Grad-CAM: 予測スコアを対象層の活性化で微分し、チャンネルごとの重要度(寄与度)を求めたうえで
+ * 活性化を重み付き合成する。単純平均と違い「予測にどれだけ効いたか」を反映した可視化になる
+ */
+export function getGradCam(
   activationModel: tf.LayersModel,
   layerNames: string[],
+  gradCamModels: Map<string, tf.LayersModel>,
   layerName: string,
   img: HTMLImageElement,
-): ActivationHeatmap {
+): GradCamResult {
+  const tailModel = gradCamModels.get(layerName)
+  if (!tailModel) throw new Error(`GradCam model not found for layer: ${layerName}`)
+
   return tf.tidy(() => {
     const input = preprocess(img)
     const outputs = activationModel.predict(input) as tf.Tensor4D[]
     const index = layerNames.indexOf(layerName)
-    const activation = outputs[index]
-    const channelMean = activation.mean(-1).squeeze([0]) as tf.Tensor2D
-    const min = channelMean.min()
-    const max = channelMean.max()
-    const normalized = channelMean.sub(min).div(max.sub(min).add(1e-6))
+    const activation = outputs[index] // [1, H, W, C]
+
+    const predictedScores = tailModel.predict(activation) as tf.Tensor
+    const classIndex = predictedScores.reshape([-1]).argMax().dataSync()[0]
+
+    const gradFn = tf.grad(
+      (x: tf.Tensor) =>
+        (tailModel.predict(x) as tf.Tensor).reshape([-1]).gather([classIndex]).sum(),
+    )
+    const grads = gradFn(activation) as tf.Tensor4D
+    const channelWeights = grads.mean([1, 2]) as tf.Tensor2D // [1, C]
+
+    const weighted = activation.mul(channelWeights.reshape([1, 1, 1, -1]))
+    const cam = (weighted.sum(-1).squeeze([0]) as tf.Tensor2D).relu()
+    const min = cam.min()
+    const max = cam.max()
+    const normalized = cam.sub(min).div(max.sub(min).add(1e-6))
     const [height, width] = normalized.shape
-    return { width, height, data: Float32Array.from(normalized.dataSync()) }
+
+    return {
+      heatmap: { width, height, data: Float32Array.from(normalized.dataSync()) },
+      channelWeights: Float32Array.from(channelWeights.reshape([-1]).dataSync()),
+    }
   })
 }
 

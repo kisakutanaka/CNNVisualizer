@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, TouchEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent, CSSProperties, TouchEvent } from 'react'
 import type * as tf from '@tensorflow/tfjs'
 import {
   loadMobileNet,
   classify,
   buildActivationModel,
-  getLayerHeatmap,
+  buildGradCamModels,
+  getGradCam,
   getChannelHeatmaps,
   OVERLAY_LAYERS,
   type Prediction,
@@ -16,10 +17,25 @@ import './App.css'
 
 const SWIPE_THRESHOLD_PX = 40
 
+/** 予測への寄与度(0〜1)を、チャンネルごとに算出する。負の寄与（予測を妨げる方向）は0として扱う */
+function getChannelProminence(weights: Float32Array): Float32Array {
+  const prominence = new Float32Array(weights.length)
+  let max = 0
+  for (const weight of weights) {
+    if (weight > max) max = weight
+  }
+  if (max <= 0) return prominence
+  for (let i = 0; i < weights.length; i++) {
+    prominence[i] = Math.max(0, weights[i]) / max
+  }
+  return prominence
+}
+
 function App() {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [model, setModel] = useState<tf.LayersModel | null>(null)
   const [activationModel, setActivationModel] = useState<tf.LayersModel | null>(null)
+  const [gradCamModels, setGradCamModels] = useState<Map<string, tf.LayersModel> | null>(null)
   const [layerNames, setLayerNames] = useState<string[]>([])
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [isClassifying, setIsClassifying] = useState(false)
@@ -27,9 +43,15 @@ function App() {
   const [imageLoadedAt, setImageLoadedAt] = useState(0)
   const [showChannelGrid, setShowChannelGrid] = useState(false)
   const [channelHeatmaps, setChannelHeatmaps] = useState<ActivationHeatmap[]>([])
+  const [channelWeights, setChannelWeights] = useState<Float32Array>(new Float32Array())
   const imgRef = useRef<HTMLImageElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const touchStartX = useRef<number | null>(null)
+
+  const channelProminence = useMemo(
+    () => getChannelProminence(channelWeights),
+    [channelWeights],
+  )
 
   useEffect(() => {
     loadMobileNet().then((loadedModel) => {
@@ -37,23 +59,34 @@ function App() {
       const built = buildActivationModel(loadedModel)
       setActivationModel(built.activationModel)
       setLayerNames(built.layerNames)
+      setGradCamModels(buildGradCamModels(loadedModel, OVERLAY_LAYERS))
     })
   }, [])
 
-  // 画像もしくは選択中の層が変わるたびに、そのオーバーレイを描き直す
+  // 画像もしくは選択中の層が変わるたびに、Grad-CAMのオーバーレイを描き直す
+  // （予測クラスへの寄与度で重み付けした合成ヒートマップ。チャンネルごとの寄与度は
+  // 個別ニューロン表示グリッドの上位ハイライトにも使う）
   useEffect(() => {
-    if (!activationModel || !imgRef.current || !canvasRef.current || imageLoadedAt === 0) {
+    if (
+      !activationModel ||
+      !gradCamModels ||
+      !imgRef.current ||
+      !canvasRef.current ||
+      imageLoadedAt === 0
+    ) {
       return
     }
-    const heatmap = getLayerHeatmap(
+    const result = getGradCam(
       activationModel,
       layerNames,
+      gradCamModels,
       OVERLAY_LAYERS[layerIndex],
       imgRef.current,
     )
-    drawActivationOverlay(canvasRef.current, heatmap)
+    drawActivationOverlay(canvasRef.current, result.heatmap)
+    setChannelWeights(result.channelWeights)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layerIndex, imageLoadedAt, activationModel])
+  }, [layerIndex, imageLoadedAt, activationModel, gradCamModels])
 
   // 個別ニューロン表示中は、層やグリッド表示のON/OFFが変わるたびにチャンネルごとの活性化を取得する
   useEffect(() => {
@@ -80,6 +113,7 @@ function App() {
       setLayerIndex(0)
       setShowChannelGrid(false)
       setChannelHeatmaps([])
+      setChannelWeights(new Float32Array())
       setImageUrl(reader.result as string)
     }
     reader.readAsDataURL(file)
@@ -166,11 +200,19 @@ function App() {
               <p className="channel-grid-heading">
                 {OVERLAY_LAYERS[layerIndex]}（{channelHeatmaps.length}チャンネル）
               </p>
+              <p className="channel-grid-caption">
+                枠線が太く濃いほど、予測への寄与度が高いニューロン
+              </p>
               <div className="channel-grid">
                 {channelHeatmaps.map((heatmap, i) => (
                   <canvas
                     key={i}
                     className="channel-tile"
+                    style={
+                      {
+                        '--prominence': channelProminence[i] ?? 0,
+                      } as CSSProperties
+                    }
                     ref={(el) => {
                       if (el && imgRef.current) drawChannelTile(el, heatmap, imgRef.current)
                     }}
