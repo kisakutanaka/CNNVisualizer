@@ -6,11 +6,12 @@ import {
   classify,
   buildActivationModel,
   buildGradCamModels,
-  getGradCam,
+  getGradCamForAllLayers,
   getChannelHeatmaps,
   OVERLAY_LAYERS,
   type Prediction,
   type ActivationHeatmap,
+  type GradCamResult,
 } from './mobilenet'
 import { drawActivationOverlay, drawChannelTile } from './heatmap'
 import './App.css'
@@ -37,14 +38,18 @@ function App() {
   const [layerNames, setLayerNames] = useState<string[]>([])
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [isClassifying, setIsClassifying] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [layerIndex, setLayerIndex] = useState(0)
-  const [imageLoadedAt, setImageLoadedAt] = useState(0)
+  const [gradCamResults, setGradCamResults] = useState<Map<string, GradCamResult>>(new Map())
   const [showChannelGrid, setShowChannelGrid] = useState(false)
   const [channelHeatmaps, setChannelHeatmaps] = useState<ActivationHeatmap[]>([])
-  const [channelWeights, setChannelWeights] = useState<Float32Array>(new Float32Array())
   const imgRef = useRef<HTMLImageElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
+  const channelWeights = useMemo(
+    () => gradCamResults.get(OVERLAY_LAYERS[layerIndex])?.channelWeights ?? new Float32Array(),
+    [gradCamResults, layerIndex],
+  )
   const channelProminence = useMemo(
     () => getChannelProminence(channelWeights),
     [channelWeights],
@@ -60,36 +65,17 @@ function App() {
     })
   }, [])
 
-  // 画像もしくは選択中の層が変わるたびに、Grad-CAMのオーバーレイを描き直す
-  // （予測クラスへの寄与度で重み付けした合成ヒートマップ。チャンネルごとの寄与度は
-  // 個別ニューロン表示グリッドの上位ハイライトにも使う）
+  // 選択中の層のGrad-CAM結果を描き直すだけ。計算自体はhandleImageLoadで画像ごとに1回だけ済ませてある
   useEffect(() => {
-    if (
-      !activationModel ||
-      !gradCamModels ||
-      !imgRef.current ||
-      !canvasRef.current ||
-      imageLoadedAt === 0
-    ) {
-      return
-    }
-    const result = getGradCam(
-      activationModel,
-      layerNames,
-      gradCamModels,
-      OVERLAY_LAYERS[layerIndex],
-      imgRef.current,
-    )
+    if (!canvasRef.current) return
+    const result = gradCamResults.get(OVERLAY_LAYERS[layerIndex])
+    if (!result) return
     drawActivationOverlay(canvasRef.current, result.heatmap)
-    setChannelWeights(result.channelWeights)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layerIndex, imageLoadedAt, activationModel, gradCamModels])
+  }, [layerIndex, gradCamResults])
 
   // 個別ニューロン表示中は、層やグリッド表示のON/OFFが変わるたびにチャンネルごとの活性化を取得する
   useEffect(() => {
-    if (!showChannelGrid || !activationModel || !imgRef.current || imageLoadedAt === 0) {
-      return
-    }
+    if (!showChannelGrid || !activationModel || !imgRef.current) return
     const heatmaps = getChannelHeatmaps(
       activationModel,
       layerNames,
@@ -98,7 +84,7 @@ function App() {
     )
     setChannelHeatmaps(heatmaps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showChannelGrid, layerIndex, imageLoadedAt, activationModel])
+  }, [showChannelGrid, layerIndex, activationModel])
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -110,7 +96,7 @@ function App() {
       setLayerIndex(0)
       setShowChannelGrid(false)
       setChannelHeatmaps([])
-      setChannelWeights(new Float32Array())
+      setGradCamResults(new Map())
       setImageUrl(reader.result as string)
     }
     reader.readAsDataURL(file)
@@ -122,7 +108,22 @@ function App() {
     const result = classify(model, imgRef.current)
     setPredictions(result)
     setIsClassifying(false)
-    setImageLoadedAt(Date.now())
+
+    if (!activationModel || !gradCamModels) return
+    setIsAnalyzing(true)
+    // setIsAnalyzingの描画を先に反映させてから、重いGrad-CAM計算に入る
+    setTimeout(() => {
+      if (!imgRef.current) return
+      const results = getGradCamForAllLayers(
+        activationModel,
+        layerNames,
+        gradCamModels,
+        OVERLAY_LAYERS,
+        imgRef.current,
+      )
+      setGradCamResults(results)
+      setIsAnalyzing(false)
+    }, 0)
   }
 
   function showPreviousLayer() {
@@ -201,7 +202,7 @@ function App() {
             <button
               type="button"
               onClick={showPreviousLayer}
-              disabled={layerIndex === 0}
+              disabled={isAnalyzing || layerIndex === 0}
               aria-label="前の層"
             >
               ‹
@@ -212,7 +213,7 @@ function App() {
             <button
               type="button"
               onClick={showNextLayer}
-              disabled={layerIndex === OVERLAY_LAYERS.length - 1}
+              disabled={isAnalyzing || layerIndex === OVERLAY_LAYERS.length - 1}
               aria-label="次の層"
             >
               ›
@@ -222,6 +223,7 @@ function App() {
           <button
             type="button"
             className="view-toggle"
+            disabled={isAnalyzing}
             onClick={() => setShowChannelGrid((v) => !v)}
           >
             {showChannelGrid ? 'オーバーレイ表示に戻る' : '個別ニューロンを見る'}
@@ -230,6 +232,7 @@ function App() {
       )}
 
       {isClassifying && <p className="status">分類中…</p>}
+      {isAnalyzing && <p className="status">各層を解析中…</p>}
 
       {predictions.length > 0 && (
         <ul className="predictions">

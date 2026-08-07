@@ -130,47 +130,63 @@ export type GradCamResult = {
 }
 
 /**
- * Grad-CAM: 予測スコアを対象層の活性化で微分し、チャンネルごとの重要度(寄与度)を求めたうえで
- * 活性化を重み付き合成する。単純平均と違い「予測にどれだけ効いたか」を反映した可視化になる
+ * OVERLAY_LAYERSの全層分のGrad-CAMを一括計算する。層の切り替えのたびに計算し直すのではなく、
+ * 画像が変わった時に一度だけ計算しておき、切り替えは表示の差し替えだけで済ませるのが狙い。
+ *
+ * - 元画像の活性化（activationModel.predict）は1回のみ計算し、各層はその結果を使い回す
+ * - 予測クラスは画像1枚につき1つに決まるので、これも1回だけ求めて全層で使い回す
+ *   （層ごとに求め直すと、対象層より後ろの計算＝浅い層ほどネットワークのほぼ全体を
+ *   無駄に繰り返し計算することになるため）
  */
-export function getGradCam(
+export function getGradCamForAllLayers(
   activationModel: tf.LayersModel,
   layerNames: string[],
   gradCamModels: Map<string, tf.LayersModel>,
-  layerName: string,
+  overlayLayers: string[],
   img: HTMLImageElement,
-): GradCamResult {
-  const tailModel = gradCamModels.get(layerName)
-  if (!tailModel) throw new Error(`GradCam model not found for layer: ${layerName}`)
+): Map<string, GradCamResult> {
+  // tf.tidyの戻り値はTensorContainer制約があり、Mapをそのまま返せないため
+  // Mapはtidyの外で組み立て、tidyの中身は計算とデータ抽出のみを行う
+  const results = new Map<string, GradCamResult>()
 
-  return tf.tidy(() => {
+  tf.tidy(() => {
     const input = preprocess(img)
     const outputs = activationModel.predict(input) as tf.Tensor4D[]
-    const index = layerNames.indexOf(layerName)
-    const activation = outputs[index] // [1, H, W, C]
 
-    const predictedScores = tailModel.predict(activation) as tf.Tensor
+    // 予測クラスの特定は、最も計算コストの低い最終層(=対象層より後ろの処理が一番短い)で行う
+    const deepestLayerName = overlayLayers[overlayLayers.length - 1]
+    const deepestTailModel = gradCamModels.get(deepestLayerName)
+    const deepestActivation = outputs[layerNames.indexOf(deepestLayerName)]
+    const predictedScores = deepestTailModel?.predict(deepestActivation) as tf.Tensor
     const classIndex = predictedScores.reshape([-1]).argMax().dataSync()[0]
 
-    const gradFn = tf.grad(
-      (x: tf.Tensor) =>
-        (tailModel.predict(x) as tf.Tensor).reshape([-1]).gather([classIndex]).sum(),
-    )
-    const grads = gradFn(activation) as tf.Tensor4D
-    const channelWeights = grads.mean([1, 2]) as tf.Tensor2D // [1, C]
+    for (const layerName of overlayLayers) {
+      const tailModel = gradCamModels.get(layerName)
+      if (!tailModel) continue
+      const activation = outputs[layerNames.indexOf(layerName)]
 
-    const weighted = activation.mul(channelWeights.reshape([1, 1, 1, -1]))
-    const cam = (weighted.sum(-1).squeeze([0]) as tf.Tensor2D).relu()
-    const min = cam.min()
-    const max = cam.max()
-    const normalized = cam.sub(min).div(max.sub(min).add(1e-6))
-    const [height, width] = normalized.shape
+      const gradFn = tf.grad(
+        (x: tf.Tensor) =>
+          (tailModel.predict(x) as tf.Tensor).reshape([-1]).gather([classIndex]).sum(),
+      )
+      const grads = gradFn(activation) as tf.Tensor4D
+      const channelWeights = grads.mean([1, 2]) as tf.Tensor2D // [1, C]
 
-    return {
-      heatmap: { width, height, data: Float32Array.from(normalized.dataSync()) },
-      channelWeights: Float32Array.from(channelWeights.reshape([-1]).dataSync()),
+      const weighted = activation.mul(channelWeights.reshape([1, 1, 1, -1]))
+      const cam = (weighted.sum(-1).squeeze([0]) as tf.Tensor2D).relu()
+      const min = cam.min()
+      const max = cam.max()
+      const normalized = cam.sub(min).div(max.sub(min).add(1e-6))
+      const [height, width] = normalized.shape
+
+      results.set(layerName, {
+        heatmap: { width, height, data: Float32Array.from(normalized.dataSync()) },
+        channelWeights: Float32Array.from(channelWeights.reshape([-1]).dataSync()),
+      })
     }
   })
+
+  return results
 }
 
 /**
