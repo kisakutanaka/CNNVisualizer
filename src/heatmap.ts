@@ -65,6 +65,10 @@ function getGrayscaleSource(sourceImage: HTMLImageElement): HTMLCanvasElement {
   return canvas
 }
 
+// タイルの描画解像度。活性化マップ自体の解像度（深い層では7x7程度まで下がる）に
+// 引きずられて背景画像まで粗くならないよう、canvasの実解像度はこれで固定する
+const TILE_RESOLUTION = 128
+
 /**
  * 個別ニューロン表示グリッド用のタイルを描画する。
  * モノクロにした元画像を背景に敷いてから活性化ヒートマップを半透明で重ね、
@@ -75,15 +79,17 @@ export function drawChannelTile(
   heatmap: ActivationHeatmap,
   sourceImage: HTMLImageElement,
 ) {
-  canvas.width = heatmap.width
-  canvas.height = heatmap.height
+  canvas.width = TILE_RESOLUTION
+  canvas.height = TILE_RESOLUTION
 
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
+  // 背景は元画像の解像度からそのまま縮小するので、タイルの数が増えても粗くならない
   const grayscaleSource = getGrayscaleSource(sourceImage)
   ctx.drawImage(grayscaleSource, 0, 0, canvas.width, canvas.height)
 
+  // ヒートマップは活性化マップ本来の解像度で作ってから、タイル解像度へ拡大描画する
   const layer = getHeatmapLayerCanvas()
   layer.width = heatmap.width
   layer.height = heatmap.height
@@ -95,5 +101,5 @@ export function drawChannelTile(
     0,
   )
 
-  ctx.drawImage(layer, 0, 0)
+  ctx.drawImage(layer, 0, 0, canvas.width, canvas.height)
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, CSSProperties, TouchEvent } from 'react'
+import type { ChangeEvent, CSSProperties } from 'react'
 import type * as tf from '@tensorflow/tfjs'
 import {
   loadMobileNet,
@@ -14,8 +14,6 @@ import {
 } from './mobilenet'
 import { drawActivationOverlay, drawChannelTile } from './heatmap'
 import './App.css'
-
-const SWIPE_THRESHOLD_PX = 40
 
 /** 予測への寄与度(0〜1)を、チャンネルごとに算出する。負の寄与（予測を妨げる方向）は0として扱う */
 function getChannelProminence(weights: Float32Array): Float32Array {
@@ -46,7 +44,6 @@ function App() {
   const [channelWeights, setChannelWeights] = useState<Float32Array>(new Float32Array())
   const imgRef = useRef<HTMLImageElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const touchStartX = useRef<number | null>(null)
 
   const channelProminence = useMemo(
     () => getChannelProminence(channelWeights),
@@ -136,19 +133,6 @@ function App() {
     setLayerIndex((i) => Math.min(OVERLAY_LAYERS.length - 1, i + 1))
   }
 
-  function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
-    touchStartX.current = event.touches[0].clientX
-  }
-
-  function handleTouchEnd(event: TouchEvent<HTMLDivElement>) {
-    if (touchStartX.current === null) return
-    const deltaX = event.changedTouches[0].clientX - touchStartX.current
-    touchStartX.current = null
-
-    if (deltaX <= -SWIPE_THRESHOLD_PX) showNextLayer()
-    else if (deltaX >= SWIPE_THRESHOLD_PX) showPreviousLayer()
-  }
-
   return (
     <main id="app">
       <h1>CNN Visualizer</h1>
@@ -176,12 +160,7 @@ function App() {
         <>
           {/* imgは個別ニューロン表示中も非表示にするだけでDOMからは外さない
               （tf.browser.fromPixelsが引き続き画像データを読めるようにするため） */}
-          <div
-            className="preview"
-            hidden={showChannelGrid}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
+          <div className="preview" hidden={showChannelGrid}>
             <img
               ref={imgRef}
               src={imageUrl}
@@ -192,11 +171,7 @@ function App() {
           </div>
 
           {showChannelGrid && (
-            <div
-              className="channel-grid-wrap"
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-            >
+            <div className="channel-grid-wrap">
               <p className="channel-grid-heading">
                 {OVERLAY_LAYERS[layerIndex]}（{channelHeatmaps.length}チャンネル）
               </p>
@@ -251,10 +226,6 @@ function App() {
           >
             {showChannelGrid ? 'オーバーレイ表示に戻る' : '個別ニューロンを見る'}
           </button>
-
-          {!showChannelGrid && (
-            <p className="hint">画像を左右にスワイプすると層を切り替えられます</p>
-          )}
         </>
       )}
 

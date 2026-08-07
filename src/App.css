@@ -143,12 +143,6 @@
   text-align: center;
 }
 
-.hint {
-  margin: -12px 0 0;
-  color: var(--text);
-  font-size: 13px;
-}
-
 .status {
   color: var(--text);
   font-size: 15px;
