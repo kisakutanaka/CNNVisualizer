@@ -129,25 +129,32 @@ export type GradCamResult = {
   channelWeights: Float32Array
 }
 
+export type LayerAnalysis = {
+  gradCam: GradCamResult
+  /** チャンネルごとの活性化マップ（個別ニューロン表示グリッド用、チャンネルごとに独立して0〜1正規化） */
+  channelHeatmaps: ActivationHeatmap[]
+}
+
 /**
- * OVERLAY_LAYERSの全層分のGrad-CAMを一括計算する。層の切り替えのたびに計算し直すのではなく、
- * 画像が変わった時に一度だけ計算しておき、切り替えは表示の差し替えだけで済ませるのが狙い。
+ * OVERLAY_LAYERSの全層分を一括で解析する（Grad-CAMのオーバーレイ＋個別ニューロンの活性化マップ）。
+ * 同じ画像なら結果は変わらないので、層の切り替えやグリッド表示のON/OFFのたびに計算し直すのではなく、
+ * 画像が変わった時に一度だけ計算してキャッシュし、以降の表示切り替えは差し替えだけで済ませるのが狙い。
  *
  * - 元画像の活性化（activationModel.predict）は1回のみ計算し、各層はその結果を使い回す
  * - 予測クラスは画像1枚につき1つに決まるので、これも1回だけ求めて全層で使い回す
  *   （層ごとに求め直すと、対象層より後ろの計算＝浅い層ほどネットワークのほぼ全体を
  *   無駄に繰り返し計算することになるため）
  */
-export function getGradCamForAllLayers(
+export function analyzeAllLayers(
   activationModel: tf.LayersModel,
   layerNames: string[],
   gradCamModels: Map<string, tf.LayersModel>,
   overlayLayers: string[],
   img: HTMLImageElement,
-): Map<string, GradCamResult> {
+): Map<string, LayerAnalysis> {
   // tf.tidyの戻り値はTensorContainer制約があり、Mapをそのまま返せないため
   // Mapはtidyの外で組み立て、tidyの中身は計算とデータ抽出のみを行う
-  const results = new Map<string, GradCamResult>()
+  const results = new Map<string, LayerAnalysis>()
 
   tf.tidy(() => {
     const input = preprocess(img)
@@ -165,6 +172,7 @@ export function getGradCamForAllLayers(
       if (!tailModel) continue
       const activation = outputs[layerNames.indexOf(layerName)]
 
+      // --- Grad-CAM ---
       const gradFn = tf.grad(
         (x: tf.Tensor) =>
           (tailModel.predict(x) as tf.Tensor).reshape([-1]).gather([classIndex]).sum(),
@@ -174,50 +182,41 @@ export function getGradCamForAllLayers(
 
       const weighted = activation.mul(channelWeights.reshape([1, 1, 1, -1]))
       const cam = (weighted.sum(-1).squeeze([0]) as tf.Tensor2D).relu()
-      const min = cam.min()
-      const max = cam.max()
-      const normalized = cam.sub(min).div(max.sub(min).add(1e-6))
-      const [height, width] = normalized.shape
+      const camMin = cam.min()
+      const camMax = cam.max()
+      const normalizedCam = cam.sub(camMin).div(camMax.sub(camMin).add(1e-6))
+      const [camHeight, camWidth] = normalizedCam.shape
+
+      // --- 個別ニューロン(チャンネル)ごとの活性化マップ ---
+      const channelActivation = activation.squeeze([0]) as tf.Tensor3D // [H, W, C]
+      const chMin = channelActivation.min([0, 1], true)
+      const chMax = channelActivation.max([0, 1], true)
+      const normalizedChannels = channelActivation.sub(chMin).div(chMax.sub(chMin).add(1e-6))
+      const [chHeight, chWidth, numChannels] = normalizedChannels.shape
+      const flatChannels = normalizedChannels.dataSync() // [h][w][c]の順に並んだフラット配列
+
+      const channelHeatmaps: ActivationHeatmap[] = []
+      for (let c = 0; c < numChannels; c++) {
+        const data = new Float32Array(chHeight * chWidth)
+        for (let i = 0; i < chHeight * chWidth; i++) {
+          data[i] = flatChannels[i * numChannels + c]
+        }
+        channelHeatmaps.push({ width: chWidth, height: chHeight, data })
+      }
 
       results.set(layerName, {
-        heatmap: { width, height, data: Float32Array.from(normalized.dataSync()) },
-        channelWeights: Float32Array.from(channelWeights.reshape([-1]).dataSync()),
+        gradCam: {
+          heatmap: {
+            width: camWidth,
+            height: camHeight,
+            data: Float32Array.from(normalizedCam.dataSync()),
+          },
+          channelWeights: Float32Array.from(channelWeights.reshape([-1]).dataSync()),
+        },
+        channelHeatmaps,
       })
     }
   })
 
   return results
-}
-
-/**
- * 指定した層の、チャンネル（ニューロン）ごとの活性化マップを個別に返す。
- * チャンネルごとに独立して0〜1へ正規化するため、活性化の強さが小さいチャンネルも見やすくなる
- */
-export function getChannelHeatmaps(
-  activationModel: tf.LayersModel,
-  layerNames: string[],
-  layerName: string,
-  img: HTMLImageElement,
-): ActivationHeatmap[] {
-  return tf.tidy(() => {
-    const input = preprocess(img)
-    const outputs = activationModel.predict(input) as tf.Tensor4D[]
-    const index = layerNames.indexOf(layerName)
-    const activation = outputs[index].squeeze([0]) as tf.Tensor3D // [H, W, C]
-    const min = activation.min([0, 1], true)
-    const max = activation.max([0, 1], true)
-    const normalized = activation.sub(min).div(max.sub(min).add(1e-6))
-    const [height, width, numChannels] = normalized.shape
-    const flat = normalized.dataSync() // [h][w][c]の順に並んだフラット配列
-
-    const channels: ActivationHeatmap[] = []
-    for (let c = 0; c < numChannels; c++) {
-      const data = new Float32Array(height * width)
-      for (let i = 0; i < height * width; i++) {
-        data[i] = flat[i * numChannels + c]
-      }
-      channels.push({ width, height, data })
-    }
-    return channels
-  })
 }
