@@ -115,3 +115,36 @@ export function getLayerHeatmap(
     return { width, height, data: Float32Array.from(normalized.dataSync()) }
   })
 }
+
+/**
+ * 指定した層の、チャンネル（ニューロン）ごとの活性化マップを個別に返す。
+ * チャンネルごとに独立して0〜1へ正規化するため、活性化の強さが小さいチャンネルも見やすくなる
+ */
+export function getChannelHeatmaps(
+  activationModel: tf.LayersModel,
+  layerNames: string[],
+  layerName: string,
+  img: HTMLImageElement,
+): ActivationHeatmap[] {
+  return tf.tidy(() => {
+    const input = preprocess(img)
+    const outputs = activationModel.predict(input) as tf.Tensor4D[]
+    const index = layerNames.indexOf(layerName)
+    const activation = outputs[index].squeeze([0]) as tf.Tensor3D // [H, W, C]
+    const min = activation.min([0, 1], true)
+    const max = activation.max([0, 1], true)
+    const normalized = activation.sub(min).div(max.sub(min).add(1e-6))
+    const [height, width, numChannels] = normalized.shape
+    const flat = normalized.dataSync() // [h][w][c]の順に並んだフラット配列
+
+    const channels: ActivationHeatmap[] = []
+    for (let c = 0; c < numChannels; c++) {
+      const data = new Float32Array(height * width)
+      for (let i = 0; i < height * width; i++) {
+        data[i] = flat[i * numChannels + c]
+      }
+      channels.push({ width, height, data })
+    }
+    return channels
+  })
+}

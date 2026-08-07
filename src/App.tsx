@@ -6,10 +6,12 @@ import {
   classify,
   buildActivationModel,
   getLayerHeatmap,
+  getChannelHeatmaps,
   OVERLAY_LAYERS,
   type Prediction,
+  type ActivationHeatmap,
 } from './mobilenet'
-import { drawActivationOverlay } from './heatmap'
+import { drawActivationOverlay, drawChannelTile } from './heatmap'
 import './App.css'
 
 const SWIPE_THRESHOLD_PX = 40
@@ -23,6 +25,8 @@ function App() {
   const [isClassifying, setIsClassifying] = useState(false)
   const [layerIndex, setLayerIndex] = useState(0)
   const [imageLoadedAt, setImageLoadedAt] = useState(0)
+  const [showChannelGrid, setShowChannelGrid] = useState(false)
+  const [channelHeatmaps, setChannelHeatmaps] = useState<ActivationHeatmap[]>([])
   const imgRef = useRef<HTMLImageElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const touchStartX = useRef<number | null>(null)
@@ -51,6 +55,21 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layerIndex, imageLoadedAt, activationModel])
 
+  // 個別ニューロン表示中は、層やグリッド表示のON/OFFが変わるたびにチャンネルごとの活性化を取得する
+  useEffect(() => {
+    if (!showChannelGrid || !activationModel || !imgRef.current || imageLoadedAt === 0) {
+      return
+    }
+    const heatmaps = getChannelHeatmaps(
+      activationModel,
+      layerNames,
+      OVERLAY_LAYERS[layerIndex],
+      imgRef.current,
+    )
+    setChannelHeatmaps(heatmaps)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showChannelGrid, layerIndex, imageLoadedAt, activationModel])
+
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -59,6 +78,8 @@ function App() {
     reader.onload = () => {
       setPredictions([])
       setLayerIndex(0)
+      setShowChannelGrid(false)
+      setChannelHeatmaps([])
       setImageUrl(reader.result as string)
     }
     reader.readAsDataURL(file)
@@ -119,8 +140,11 @@ function App() {
 
       {imageUrl && (
         <>
+          {/* imgは個別ニューロン表示中も非表示にするだけでDOMからは外さない
+              （tf.browser.fromPixelsが引き続き画像データを読めるようにするため） */}
           <div
             className="preview"
+            hidden={showChannelGrid}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
@@ -132,6 +156,29 @@ function App() {
             />
             <canvas ref={canvasRef} className="activation-overlay" />
           </div>
+
+          {showChannelGrid && (
+            <div
+              className="channel-grid-wrap"
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            >
+              <p className="channel-grid-heading">
+                {OVERLAY_LAYERS[layerIndex]}（{channelHeatmaps.length}チャンネル）
+              </p>
+              <div className="channel-grid">
+                {channelHeatmaps.map((heatmap, i) => (
+                  <canvas
+                    key={i}
+                    className="channel-tile"
+                    ref={(el) => {
+                      if (el) drawChannelTile(el, heatmap)
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="layer-nav">
             <button
@@ -154,7 +201,18 @@ function App() {
               ›
             </button>
           </div>
-          <p className="hint">画像を左右にスワイプすると層を切り替えられます</p>
+
+          <button
+            type="button"
+            className="view-toggle"
+            onClick={() => setShowChannelGrid((v) => !v)}
+          >
+            {showChannelGrid ? 'オーバーレイ表示に戻る' : '個別ニューロンを見る'}
+          </button>
+
+          {!showChannelGrid && (
+            <p className="hint">画像を左右にスワイプすると層を切り替えられます</p>
+          )}
         </>
       )}
 

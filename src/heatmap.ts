@@ -8,10 +8,10 @@ function heatmapColor(value: number): [number, number, number] {
   return [r, g, b]
 }
 
-/** ヒートマップをcanvasに描画する。活性化が弱い部分ほど透明にし、元画像に重ねられるようにする */
-export function drawActivationOverlay(
+function paintHeatmap(
   canvas: HTMLCanvasElement,
   heatmap: ActivationHeatmap,
+  alphaFromValue: (value: number) => number,
 ) {
   canvas.width = heatmap.width
   canvas.height = heatmap.height
@@ -26,7 +26,20 @@ export function drawActivationOverlay(
     imageData.data[i * 4] = r
     imageData.data[i * 4 + 1] = g
     imageData.data[i * 4 + 2] = b
-    imageData.data[i * 4 + 3] = Math.round(value * 255)
+    imageData.data[i * 4 + 3] = alphaFromValue(value)
   }
   ctx.putImageData(imageData, 0, 0)
+}
+
+/** ヒートマップをcanvasに描画する。活性化が弱い部分ほど透明にし、元画像に重ねられるようにする */
+export function drawActivationOverlay(
+  canvas: HTMLCanvasElement,
+  heatmap: ActivationHeatmap,
+) {
+  paintHeatmap(canvas, heatmap, (value) => Math.round(value * 255))
+}
+
+/** 個別ニューロン表示グリッド用のタイルを描画する。常に不透明で描画する */
+export function drawChannelTile(canvas: HTMLCanvasElement, heatmap: ActivationHeatmap) {
+  paintHeatmap(canvas, heatmap, () => 255)
 }
