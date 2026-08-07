@@ -8,18 +8,11 @@ function heatmapColor(value: number): [number, number, number] {
   return [r, g, b]
 }
 
-function paintHeatmap(
-  canvas: HTMLCanvasElement,
+function heatmapToImageData(
   heatmap: ActivationHeatmap,
   alphaFromValue: (value: number) => number,
-) {
-  canvas.width = heatmap.width
-  canvas.height = heatmap.height
-
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-
-  const imageData = ctx.createImageData(heatmap.width, heatmap.height)
+): ImageData {
+  const imageData = new ImageData(heatmap.width, heatmap.height)
   for (let i = 0; i < heatmap.data.length; i++) {
     const value = heatmap.data[i]
     const [r, g, b] = heatmapColor(value)
@@ -28,7 +21,7 @@ function paintHeatmap(
     imageData.data[i * 4 + 2] = b
     imageData.data[i * 4 + 3] = alphaFromValue(value)
   }
-  ctx.putImageData(imageData, 0, 0)
+  return imageData
 }
 
 /** ヒートマップをcanvasに描画する。活性化が弱い部分ほど透明にし、元画像に重ねられるようにする */
@@ -36,10 +29,71 @@ export function drawActivationOverlay(
   canvas: HTMLCanvasElement,
   heatmap: ActivationHeatmap,
 ) {
-  paintHeatmap(canvas, heatmap, (value) => Math.round(value * 255))
+  canvas.width = heatmap.width
+  canvas.height = heatmap.height
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  ctx.putImageData(heatmapToImageData(heatmap, (value) => Math.round(value * 255)), 0, 0)
 }
 
-/** 個別ニューロン表示グリッド用のタイルを描画する。常に不透明で描画する */
-export function drawChannelTile(canvas: HTMLCanvasElement, heatmap: ActivationHeatmap) {
-  paintHeatmap(canvas, heatmap, () => 255)
+// ヒートマップ合成用に使い回す一時canvas（putImageDataは透過を合成できないため経由させる）
+let heatmapLayerCanvas: HTMLCanvasElement | null = null
+function getHeatmapLayerCanvas(): HTMLCanvasElement {
+  if (!heatmapLayerCanvas) heatmapLayerCanvas = document.createElement('canvas')
+  return heatmapLayerCanvas
+}
+
+// グレースケール化した元画像のキャッシュ。タイルの数だけ`filter: grayscale`を
+// かけ直すと重いため、画像ごとに一度だけ生成し、各タイルへは縮小コピー（drawImageの
+// スケーリング＝テクスチャ座標のサンプリング）だけで済ませる
+let grayscaleSourceCache: { src: string; canvas: HTMLCanvasElement } | null = null
+function getGrayscaleSource(sourceImage: HTMLImageElement): HTMLCanvasElement {
+  if (grayscaleSourceCache?.src === sourceImage.src) {
+    return grayscaleSourceCache.canvas
+  }
+  const canvas = document.createElement('canvas')
+  canvas.width = sourceImage.naturalWidth
+  canvas.height = sourceImage.naturalHeight
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.filter = 'grayscale(1)'
+    ctx.drawImage(sourceImage, 0, 0)
+  }
+  grayscaleSourceCache = { src: sourceImage.src, canvas }
+  return canvas
+}
+
+/**
+ * 個別ニューロン表示グリッド用のタイルを描画する。
+ * モノクロにした元画像を背景に敷いてから活性化ヒートマップを半透明で重ね、
+ * 層が深くなり活性化マップの解像度が下がっても画像内のどこに反応しているか分かるようにする
+ */
+export function drawChannelTile(
+  canvas: HTMLCanvasElement,
+  heatmap: ActivationHeatmap,
+  sourceImage: HTMLImageElement,
+) {
+  canvas.width = heatmap.width
+  canvas.height = heatmap.height
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const grayscaleSource = getGrayscaleSource(sourceImage)
+  ctx.drawImage(grayscaleSource, 0, 0, canvas.width, canvas.height)
+
+  const layer = getHeatmapLayerCanvas()
+  layer.width = heatmap.width
+  layer.height = heatmap.height
+  const layerCtx = layer.getContext('2d')
+  if (!layerCtx) return
+  layerCtx.putImageData(
+    heatmapToImageData(heatmap, (value) => Math.round(value * 255)),
+    0,
+    0,
+  )
+
+  ctx.drawImage(layer, 0, 0)
 }

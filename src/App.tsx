@@ -172,7 +172,7 @@ function App() {
                     key={i}
                     className="channel-tile"
                     ref={(el) => {
-                      if (el) drawChannelTile(el, heatmap)
+                      if (el && imgRef.current) drawChannelTile(el, heatmap, imgRef.current)
                     }}
                   />
                 ))}
