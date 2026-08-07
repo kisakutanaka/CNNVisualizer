@@ -125,8 +125,12 @@ export function buildGradCamModels(
 export type GradCamResult = {
   /** 予測クラスへの寄与度で重み付けした合成ヒートマップ（0〜1正規化） */
   heatmap: ActivationHeatmap
-  /** チャンネル（ニューロン）ごとの予測への寄与度。値が大きいほど予測に強く貢献している */
-  channelWeights: Float32Array
+  /**
+   * チャンネル（ニューロン）ごとの、合成ヒートマップへの実際の貢献度（重み×活性化の空間最大値、
+   * 負の値は0扱い）。勾配ベースの「重要度」だけだと、実際にはほとんど発火していないチャンネルも
+   * 高くなり得て個別ニューロン表示の枠線と合成画像の見た目が食い違うため、活性化の強さも加味している
+   */
+  channelContributions: Float32Array
 }
 
 export type LayerAnalysis = {
@@ -181,6 +185,9 @@ export function analyzeAllLayers(
       const channelWeights = grads.mean([1, 2]) as tf.Tensor2D // [1, C]
 
       const weighted = activation.mul(channelWeights.reshape([1, 1, 1, -1]))
+      // 各チャンネルが合成ヒートマップに実際どれだけ効いたか（空間方向の最大値）。
+      // 活性化は常に0以上（_relu層のため）なので、符号はchannelWeightsの符号と一致する
+      const channelContributions = weighted.max([1, 2]) as tf.Tensor2D // [1, C]
       const cam = (weighted.sum(-1).squeeze([0]) as tf.Tensor2D).relu()
       const camMin = cam.min()
       const camMax = cam.max()
@@ -211,7 +218,9 @@ export function analyzeAllLayers(
             height: camHeight,
             data: Float32Array.from(normalizedCam.dataSync()),
           },
-          channelWeights: Float32Array.from(channelWeights.reshape([-1]).dataSync()),
+          channelContributions: Float32Array.from(
+            channelContributions.reshape([-1]).dataSync(),
+          ),
         },
         channelHeatmaps,
       })

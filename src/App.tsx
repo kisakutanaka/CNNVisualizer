@@ -14,16 +14,16 @@ import {
 import { drawActivationOverlay, drawChannelTile } from './heatmap'
 import './App.css'
 
-/** 予測への寄与度(0〜1)を、チャンネルごとに算出する。負の寄与（予測を妨げる方向）は0として扱う */
-function getChannelProminence(weights: Float32Array): Float32Array {
-  const prominence = new Float32Array(weights.length)
+/** 合成ヒートマップへの実際の貢献度(0〜1)を、チャンネルごとに算出する。負の貢献は0として扱う */
+function getChannelProminence(contributions: Float32Array): Float32Array {
+  const prominence = new Float32Array(contributions.length)
   let max = 0
-  for (const weight of weights) {
-    if (weight > max) max = weight
+  for (const contribution of contributions) {
+    if (contribution > max) max = contribution
   }
   if (max <= 0) return prominence
-  for (let i = 0; i < weights.length; i++) {
-    prominence[i] = Math.max(0, weights[i]) / max
+  for (let i = 0; i < contributions.length; i++) {
+    prominence[i] = Math.max(0, contributions[i]) / max
   }
   return prominence
 }
@@ -49,7 +49,8 @@ function App() {
     [currentAnalysis],
   )
   const channelProminence = useMemo(
-    () => getChannelProminence(currentAnalysis?.gradCam.channelWeights ?? new Float32Array()),
+    () =>
+      getChannelProminence(currentAnalysis?.gradCam.channelContributions ?? new Float32Array()),
     [currentAnalysis],
   )
 
