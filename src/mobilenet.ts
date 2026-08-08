@@ -126,16 +126,21 @@ export type GradCamResult = {
   /** 予測クラスへの寄与度で重み付けした合成ヒートマップ（0〜1正規化） */
   heatmap: ActivationHeatmap
   /**
-   * チャンネル（ニューロン）ごとの、合成ヒートマップへの実際の貢献度（重み×活性化の空間最大値、
-   * 負の値は0扱い）。勾配ベースの「重要度」だけだと、実際にはほとんど発火していないチャンネルも
-   * 高くなり得て個別ニューロン表示の枠線と合成画像の見た目が食い違うため、活性化の強さも加味している
+   * チャンネル（ニューロン）ごとの、合成ヒートマップ(cam)の強調領域への実際の寄与度
+   * （重み×活性化を、正規化後のcamの値で空間的に重み付けして合計したもの。負の値は0扱い）。
+   * チャンネル自身のピーク値だけで見ると、そのピークが合成画像の強調領域と別の場所にある場合に
+   * 個別ニューロン表示の枠線と合成画像の見た目が食い違うため、「合成画像で実際に強調されている
+   * 領域にどれだけ効いたか」を直接測ることで両者を整合させている
    */
   channelContributions: Float32Array
 }
 
 export type LayerAnalysis = {
   gradCam: GradCamResult
-  /** チャンネルごとの活性化マップ（個別ニューロン表示グリッド用、チャンネルごとに独立して0〜1正規化） */
+  /**
+   * チャンネルごとの活性化マップ（個別ニューロン表示グリッド用）。
+   * その層の全チャンネル共通の基準で0〜1正規化しているため、赤さの強さをチャンネル間で比較できる
+   */
   channelHeatmaps: ActivationHeatmap[]
 }
 
@@ -185,20 +190,31 @@ export function analyzeAllLayers(
       const channelWeights = grads.mean([1, 2]) as tf.Tensor2D // [1, C]
 
       const weighted = activation.mul(channelWeights.reshape([1, 1, 1, -1]))
-      // 各チャンネルが合成ヒートマップに実際どれだけ効いたか（空間方向の最大値）。
-      // 活性化は常に0以上（_relu層のため）なので、符号はchannelWeightsの符号と一致する
-      const channelContributions = weighted.max([1, 2]) as tf.Tensor2D // [1, C]
       const cam = (weighted.sum(-1).squeeze([0]) as tf.Tensor2D).relu()
       const camMin = cam.min()
       const camMax = cam.max()
       const normalizedCam = cam.sub(camMin).div(camMax.sub(camMin).add(1e-6))
       const [camHeight, camWidth] = normalizedCam.shape
 
+      // 各チャンネルが「合成ヒートマップが実際に強調している領域」にどれだけ寄与したか。
+      // チャンネル自身のピーク値だけを見ると、そのピークが合成画像の強調領域と別の場所にある場合に
+      // 個別ニューロン表示の枠線と合成画像の見た目が食い違うため、正規化後のcamの値で
+      // 空間的に重み付けして合計する（cam = Σ_c weighted_c なので、この重み付き合計は
+      // 「合成画像の強調領域はこのチャンネルの寄与でどれだけ説明できるか」に対応する）
+      const camWeights = normalizedCam.reshape([1, camHeight, camWidth, 1])
+      const channelContributions = weighted.mul(camWeights).sum([1, 2]) as tf.Tensor2D // [1, C]
+
       // --- 個別ニューロン(チャンネル)ごとの活性化マップ ---
+      // 正規化はチャンネルごとではなく、同じ層の全チャンネル・全ピクセルに共通の基準で行う。
+      // チャンネルごとに正規化すると、実際の反応量が小さいチャンネルでも「その中で一番強い場所」が
+      // 必ず真っ赤になってしまい、色の赤さが「どこで反応したか」しか表さず「どれだけ強く反応したか」
+      // が失われる。層全体で共通の基準にすることで、赤さがその層内での相対的な反応の強さを表すようになる
       const channelActivation = activation.squeeze([0]) as tf.Tensor3D // [H, W, C]
-      const chMin = channelActivation.min([0, 1], true)
-      const chMax = channelActivation.max([0, 1], true)
-      const normalizedChannels = channelActivation.sub(chMin).div(chMax.sub(chMin).add(1e-6))
+      const layerMin = channelActivation.min()
+      const layerMax = channelActivation.max()
+      const normalizedChannels = channelActivation
+        .sub(layerMin)
+        .div(layerMax.sub(layerMin).add(1e-6))
       const [chHeight, chWidth, numChannels] = normalizedChannels.shape
       const flatChannels = normalizedChannels.dataSync() // [h][w][c]の順に並んだフラット配列
 
