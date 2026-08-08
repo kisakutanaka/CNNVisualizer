@@ -38,27 +38,27 @@ export function drawActivationOverlay(
   ctx.putImageData(heatmapToImageData(heatmap, (value) => Math.round(value * 255)), 0, 0)
 }
 
-// グレースケール背景キャッシュの解像度。個別ニューロン表示グリッドの背景として
-// WebGLテクスチャに使われるだけなので、この程度で十分（GPU側で拡大される）
+// 背景キャッシュの解像度。個別ニューロン表示グリッドの背景としてWebGLテクスチャに
+// 使われるだけなので、この程度で十分（GPU側で拡大される）
 const TILE_RESOLUTION = 128
 
-// グレースケール化した元画像のキャッシュ。個別ニューロン表示グリッドの背景として使う。
+// 縮小した元画像（色つきのまま）のキャッシュ。個別ニューロン表示グリッドの背景として使う。
 // 元画像の解像度（iPhone写真だと3000〜4000px級）から毎回縮小描画すると重いため、
-// 画像ごとに一度だけ「グレースケール化 かつ 縮小」まで済ませてキャッシュしておく
-// （WebGLのテクスチャとしてGPU側で拡大されるので、この解像度のままで十分）
-let grayscaleSourceCache: { src: string; canvas: HTMLCanvasElement } | null = null
-export function getGrayscaleSource(sourceImage: HTMLImageElement): HTMLCanvasElement {
-  if (grayscaleSourceCache?.src === sourceImage.src) {
-    return grayscaleSourceCache.canvas
+// 画像ごとに一度だけ縮小して キャッシュしておく。
+// グレースケール化はCanvas2Dの`filter`（Safariでのサポートが不安定）ではなく、
+// WebGL側のフラグメントシェーダーで行う（channelGridRenderer.ts）
+let scaledSourceCache: { src: string; canvas: HTMLCanvasElement } | null = null
+export function getScaledSource(sourceImage: HTMLImageElement): HTMLCanvasElement {
+  if (scaledSourceCache?.src === sourceImage.src) {
+    return scaledSourceCache.canvas
   }
   const canvas = document.createElement('canvas')
   canvas.width = TILE_RESOLUTION
   canvas.height = TILE_RESOLUTION
   const ctx = canvas.getContext('2d')
   if (ctx) {
-    ctx.filter = 'grayscale(1)'
     ctx.drawImage(sourceImage, 0, 0, TILE_RESOLUTION, TILE_RESOLUTION)
   }
-  grayscaleSourceCache = { src: sourceImage.src, canvas }
+  scaledSourceCache = { src: sourceImage.src, canvas }
   return canvas
 }

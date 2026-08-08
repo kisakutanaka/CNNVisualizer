@@ -1,5 +1,5 @@
 import type { ActivationHeatmap } from './mobilenet'
-import { getGrayscaleSource } from './heatmap'
+import { getScaledSource } from './heatmap'
 
 // 頂点ごとに (位置x,y / テクスチャ座標u,v / チャンネル番号 / 寄与度) を渡し、
 // タイル1枚1枚を個別にdrawImageするのではなく、全チャンネル分の四角形を
@@ -39,7 +39,11 @@ uniform mediump sampler2DArray uHeatTexture;
 out vec4 outColor;
 
 void main() {
-  vec3 bg = texture(uBgTexture, vTexCoord).rgb;
+  // 背景はここでグレースケール化する（Canvas2Dのctx.filter='grayscale(1)'は
+  // Safariでサポートが不安定なため、色つきのまま渡してシェーダー側で輝度に変換する）
+  vec3 bgColor = texture(uBgTexture, vTexCoord).rgb;
+  float gray = dot(bgColor, vec3(0.299, 0.587, 0.114));
+  vec3 bg = vec3(gray);
   float value = texture(uHeatTexture, vec3(vTexCoord, vLayer)).r;
 
   // heatmap.tsのheatmapColorと同じ配色（青→緑→赤）
@@ -248,11 +252,11 @@ export function renderChannelGrid(
   gl.bindBuffer(gl.ARRAY_BUFFER, state.vertexBuffer)
   gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW)
 
-  // --- 背景（モノクロ元画像）テクスチャ。全タイルで共通の1枚を使い回す ---
-  const grayscaleSource = getGrayscaleSource(sourceImage)
+  // --- 背景テクスチャ。全タイルで共通の1枚を使い回す（グレースケール化はシェーダー側） ---
+  const scaledSource = getScaledSource(sourceImage)
   gl.activeTexture(gl.TEXTURE0)
   gl.bindTexture(gl.TEXTURE_2D, state.bgTexture)
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, grayscaleSource)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, scaledSource)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
