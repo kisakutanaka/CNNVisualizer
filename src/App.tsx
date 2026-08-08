@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, CSSProperties } from 'react'
+import type { ChangeEvent } from 'react'
 import type * as tf from '@tensorflow/tfjs'
 import {
   loadMobileNet,
@@ -11,8 +11,13 @@ import {
   type Prediction,
   type LayerAnalysis,
 } from './mobilenet'
-import { drawActivationOverlay, drawChannelTile } from './heatmap'
+import { drawActivationOverlay } from './heatmap'
+import { renderChannelGrid } from './channelGridRenderer'
 import './App.css'
+
+// 個別ニューロン表示グリッドのレイアウト定数
+const GRID_MIN_TILE_SIZE = 64
+const GRID_GAP = 6
 
 /** 合成ヒートマップへの実際の貢献度(0〜1)を、チャンネルごとに算出する。負の貢献は0として扱う */
 function getChannelProminence(contributions: Float32Array): Float32Array {
@@ -42,6 +47,8 @@ function App() {
   const [showChannelGrid, setShowChannelGrid] = useState(false)
   const imgRef = useRef<HTMLImageElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const gridCanvasRef = useRef<HTMLCanvasElement>(null)
+  const gridWrapRef = useRef<HTMLDivElement>(null)
 
   const currentAnalysis = layerAnalysis.get(OVERLAY_LAYERS[layerIndex])
   const channelHeatmaps = useMemo(
@@ -69,6 +76,39 @@ function App() {
     if (!canvasRef.current || !currentAnalysis) return
     drawActivationOverlay(canvasRef.current, currentAnalysis.gradCam.heatmap)
   }, [currentAnalysis])
+
+  // 個別ニューロン表示グリッドの描画。コンテナ幅から列数・タイルサイズを求めて
+  // WebGLで一括描画するため、表示中は幅が変わるたびに（画面回転等）再計算する
+  useEffect(() => {
+    if (!showChannelGrid) return
+    const canvas = gridCanvasRef.current
+    const wrap = gridWrapRef.current
+    const sourceImage = imgRef.current
+    if (!canvas || !wrap || !sourceImage || channelHeatmaps.length === 0) return
+
+    function render() {
+      const containerWidth = wrap!.clientWidth
+      const columns = Math.max(
+        1,
+        Math.floor((containerWidth + GRID_GAP) / (GRID_MIN_TILE_SIZE + GRID_GAP)),
+      )
+      const tileSize = (containerWidth - (columns - 1) * GRID_GAP) / columns
+      renderChannelGrid(
+        canvas!,
+        channelHeatmaps,
+        channelProminence,
+        sourceImage!,
+        columns,
+        tileSize,
+        GRID_GAP,
+      )
+    }
+
+    render()
+    const resizeObserver = new ResizeObserver(render)
+    resizeObserver.observe(wrap)
+    return () => resizeObserver.disconnect()
+  }, [showChannelGrid, channelHeatmaps, channelProminence])
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -160,29 +200,14 @@ function App() {
           </div>
 
           {showChannelGrid && (
-            <div className="channel-grid-wrap">
+            <div className="channel-grid-wrap" ref={gridWrapRef}>
               <p className="channel-grid-heading">
                 {OVERLAY_LAYERS[layerIndex]}（{channelHeatmaps.length}チャンネル）
               </p>
               <p className="channel-grid-caption">
-                枠線が太く濃いほど、予測への寄与度が高いニューロン
+                色が鮮やかなほど、予測への寄与度が高いニューロン（強く反応していても寄与度が低いと灰色に沈みます）
               </p>
-              <div className="channel-grid">
-                {channelHeatmaps.map((heatmap, i) => (
-                  <canvas
-                    key={i}
-                    className="channel-tile"
-                    style={
-                      {
-                        '--prominence': channelProminence[i] ?? 0,
-                      } as CSSProperties
-                    }
-                    ref={(el) => {
-                      if (el && imgRef.current) drawChannelTile(el, heatmap, imgRef.current)
-                    }}
-                  />
-                ))}
-              </div>
+              <canvas className="channel-grid-canvas" ref={gridCanvasRef} />
             </div>
           )}
 

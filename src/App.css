@@ -88,24 +88,9 @@
   text-align: center;
 }
 
-.channel-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
-  gap: 6px;
-}
-
-.channel-tile {
-  --prominence: 0;
+.channel-grid-canvas {
+  display: block;
   width: 100%;
-  aspect-ratio: 1;
-  border-radius: 4px;
-  border-style: solid;
-  border-width: calc(1px + var(--prominence) * 3px);
-  border-color: color-mix(
-    in srgb,
-    var(--accent) calc(var(--prominence) * 100%),
-    var(--border)
-  );
 }
 
 .view-toggle {
