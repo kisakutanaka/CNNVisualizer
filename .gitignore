@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# 動作確認用にローカルで使うテスト画像（個人の写真を含むためコミットしない）
+test_img/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
