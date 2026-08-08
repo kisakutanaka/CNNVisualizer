@@ -205,7 +205,7 @@ function App() {
                 {OVERLAY_LAYERS[layerIndex]}（{channelHeatmaps.length}チャンネル）
               </p>
               <p className="channel-grid-caption">
-                色が鮮やかなほど、予測への寄与度が高いニューロン（強く反応していても寄与度が低いと灰色に沈みます）
+                色の濃さは反応の強さ、枠線の太さ・濃さは予測への寄与度を表します
               </p>
               <canvas className="channel-grid-canvas" ref={gridCanvasRef} />
             </div>

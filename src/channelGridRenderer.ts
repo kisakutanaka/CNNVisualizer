@@ -35,6 +35,9 @@ in float vProminence;
 
 uniform sampler2D uBgTexture;
 uniform mediump sampler2DArray uHeatTexture;
+uniform float uTileSizePx;
+uniform vec3 uAccentColor;
+uniform vec3 uBorderColor;
 
 out vec4 outColor;
 
@@ -46,18 +49,25 @@ void main() {
   vec3 bg = vec3(gray);
   float value = texture(uHeatTexture, vec3(vTexCoord, vLayer)).r;
 
-  // heatmap.tsのheatmapColorと同じ配色（青→緑→赤）
+  // heatmap.tsのheatmapColorと同じ配色（青→緑→赤）。色の濃さは寄与度に関係なく、
+  // このチャンネル自身がどれだけ反応したかだけで決まる（寄与度は下の枠線で表す）
   vec3 heatColor = vec3(
     value,
     1.0 - abs(value - 0.5) * 2.0,
     1.0 - value
   );
+  vec3 composited = mix(bg, heatColor, value);
 
-  // 寄与度が低いニューロンは、活性化がどれだけ強くても色が沈んでグレー（背景）に近づく。
-  // 「赤い＝反応した」ではなく「赤くて浮き上がっている＝分類の判断に効いた」という
-  // 見た目にするため、活性化の強さと寄与度の両方でアルファを決める
-  float alpha = value * vProminence;
-  outColor = vec4(mix(bg, heatColor, alpha), 1.0);
+  // 寄与度が高いほど太く・濃い枠線を表示する。枠の太さはタイルの実ピクセルサイズを
+  // 基準に正規化したtexcoord空間上の閾値として計算する
+  float borderPx = 1.0 + vProminence * 3.0;
+  float borderFrac = borderPx / uTileSizePx;
+  bool isBorder =
+    vTexCoord.x < borderFrac || vTexCoord.x > 1.0 - borderFrac ||
+    vTexCoord.y < borderFrac || vTexCoord.y > 1.0 - borderFrac;
+  vec3 borderColor = mix(uBorderColor, uAccentColor, vProminence);
+
+  outColor = vec4(isBorder ? borderColor : composited, 1.0);
 }
 `
 
@@ -84,6 +94,9 @@ type GridGLState = {
   uResolution: WebGLUniformLocation | null
   uBgTexture: WebGLUniformLocation | null
   uHeatTexture: WebGLUniformLocation | null
+  uTileSizePx: WebGLUniformLocation | null
+  uAccentColor: WebGLUniformLocation | null
+  uBorderColor: WebGLUniformLocation | null
 }
 
 const glStateCache = new WeakMap<HTMLCanvasElement, GridGLState>()
@@ -139,7 +152,19 @@ function initGridGLState(canvas: HTMLCanvasElement): GridGLState {
     uResolution: gl.getUniformLocation(program, 'uResolution'),
     uBgTexture: gl.getUniformLocation(program, 'uBgTexture'),
     uHeatTexture: gl.getUniformLocation(program, 'uHeatTexture'),
+    uTileSizePx: gl.getUniformLocation(program, 'uTileSizePx'),
+    uAccentColor: gl.getUniformLocation(program, 'uAccentColor'),
+    uBorderColor: gl.getUniformLocation(program, 'uBorderColor'),
   }
+}
+
+// "#rrggbb"形式のCSSカラーを0〜1のRGBに変換する（--accent, --borderは常にこの形式）
+function parseHexColor(hex: string): [number, number, number] {
+  const trimmed = hex.trim().replace('#', '')
+  const r = parseInt(trimmed.slice(0, 2), 16) / 255
+  const g = parseInt(trimmed.slice(2, 4), 16) / 255
+  const b = parseInt(trimmed.slice(4, 6), 16) / 255
+  return [r, g, b]
 }
 
 // チャンネル数分の四角形（2三角形=6頂点）をまとめた1本の頂点バッファを組み立てる。
@@ -205,10 +230,12 @@ const MAX_CANVAS_HEIGHT_PX = 8000
 
 /**
  * 個別ニューロン表示グリッドを描画する。
- * モノクロの元画像を背景に敷き、その上に各チャンネルの活性化ヒートマップを半透明で重ねる
- * （寄与度が低いほど薄れて背景に沈む）。チャンネル数だけcanvasやdrawImageを繰り返すのではなく、
- * 全チャンネル分の頂点をまとめた1本の頂点バッファと、チャンネルごとに1レイヤーを割り当てた
- * テクスチャ配列を使い、1回のバインド・1回のdraw callでグリッド全体を描き切る
+ * モノクロの元画像を背景に敷き、その上に各チャンネルの活性化ヒートマップを半透明で重ねる。
+ * 色の濃さは寄与度に関係なく「このチャンネル自身がどれだけ反応したか」だけを表し、
+ * 寄与度（予測への効き具合）は別途タイルの枠線の太さ・濃さで表す。
+ * チャンネル数だけcanvasやdrawImageを繰り返すのではなく、全チャンネル分の頂点をまとめた
+ * 1本の頂点バッファと、チャンネルごとに1レイヤーを割り当てたテクスチャ配列を使い、
+ * 1回のバインド・1回のdraw callでグリッド全体を描き切る
  */
 export function renderChannelGrid(
   canvas: HTMLCanvasElement,
@@ -294,6 +321,12 @@ export function renderChannelGrid(
   gl.uniform2f(state.uResolution, canvas.width, canvas.height)
   gl.uniform1i(state.uBgTexture, 0)
   gl.uniform1i(state.uHeatTexture, 1)
+  gl.uniform1f(state.uTileSizePx, cssTileSize * dpr)
+  const rootStyle = getComputedStyle(document.documentElement)
+  const [ar, ag, ab] = parseHexColor(rootStyle.getPropertyValue('--accent'))
+  const [br, bg_, bb] = parseHexColor(rootStyle.getPropertyValue('--border'))
+  gl.uniform3f(state.uAccentColor, ar, ag, ab)
+  gl.uniform3f(state.uBorderColor, br, bg_, bb)
   gl.bindVertexArray(state.vao)
   gl.drawArrays(gl.TRIANGLES, 0, heatmaps.length * 6)
   gl.bindVertexArray(null)
