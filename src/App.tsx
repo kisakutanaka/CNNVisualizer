@@ -248,7 +248,10 @@ function App() {
         <ul className="predictions">
           {predictions.map((prediction) => (
             <li key={prediction.className}>
-              <span className="label">{prediction.className}</span>
+              <span className="label">
+                <span className="label-ja">{prediction.classNameJa}</span>
+                <span className="label-en">{prediction.className}</span>
+              </span>
               <span className="probability">
                 {(prediction.probability * 100).toFixed(1)}%
               </span>

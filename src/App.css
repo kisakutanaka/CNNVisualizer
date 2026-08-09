@@ -166,8 +166,19 @@
   }
 
   .label {
-    color: var(--text-h);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     text-align: left;
+  }
+
+  .label-ja {
+    color: var(--text-h);
+  }
+
+  .label-en {
+    color: var(--text);
+    font-size: 12px;
   }
 
   .probability {

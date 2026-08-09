@@ -114,7 +114,7 @@ CNN Visualizer を小さく動く単位で段階的に実装していくため�
 
 ## MVP完了後のバックログ（優先度未定、着手はMVP完成後）
 
-- 分類結果ラベルの日本語化（現状はImageNetの英語ラベルをそのまま表示。ユーザーコメント2026-08-05: 「結果が英語だからいずれ日本語にしたい」）
+- [x] 分類結果ラベルの日本語化（2026-08-09対応）：ImageNet1000クラスの日本語訳を[gist](https://gist.github.com/PonDad/4dcb4b242b9358e524b4ddecbee385e9)から取得し、`src/data/imagenetClassesJa.ts`として追加（`imagenetClasses.ts`と同じクラスindex順）。ただし元データに同綴異義語の取り違えによる明らかな誤訳が多数見つかったため（例: `cock`（雄鶏）→「コック」、`kite`（トビ）→「凧」、`organ`（オルガン）→「器官」、`safe`（金庫）→「安全」、`vacuum`（掃除機）→「真空」、`badger`（アナグマ）→「狸」、`iPod`→「アイフォーン」、`pick`/`pickup`/`upright`等の名詞を動詞・形容詞の意味に誤訳、等）、目視確認できた約40件を手作業で修正してから組み込んだ。`Prediction`型に`classNameJa`を追加し（`src/mobilenet.ts`）、分類結果は日本語ラベルを主表示、英語ラベルを小さく併記する形にした（`src/App.tsx`, `src/App.css`）。1000件すべてを検証しきれてはいないため、実機確認で気になる訳があれば都度修正する
 
 ---
 

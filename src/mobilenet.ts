@@ -1,5 +1,6 @@
 import * as tf from '@tensorflow/tfjs'
 import { IMAGENET_CLASSES } from './data/imagenetClasses'
+import { IMAGENET_CLASSES_JA } from './data/imagenetClassesJa'
 
 const MODEL_URL =
   'https://storage.googleapis.com/tfjs-models/tfjs/mobilenet_v1_0.25_224/model.json'
@@ -10,7 +11,7 @@ const INPUT_SIZE = 224
 // （BatchNormalization等の補助的な層は対象外）
 const VISUALIZABLE_LAYER_TYPES = ['Conv2D', 'DepthwiseConv2D', 'Activation']
 
-export type Prediction = { className: string; probability: number }
+export type Prediction = { className: string; classNameJa: string; probability: number }
 export type LayerActivation = { name: string; shape: number[] }
 
 // スワイプで切り替える層。MobileNetV1(alpha 0.25)は13個のブロック（dw+pw）で構成される。
@@ -60,6 +61,7 @@ export function classify(
     const classIndices = indices.dataSync()
     return Array.from(classIndices).map((classIndex, i) => ({
       className: IMAGENET_CLASSES[classIndex],
+      classNameJa: IMAGENET_CLASSES_JA[classIndex],
       probability: probabilityValues[i],
     }))
   })
